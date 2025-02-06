@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Loyalty NFT Program</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .card { border: 1px solid #ddd; padding: 20px; margin: 10px 0; border-radius: 8px; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+        .status { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <h1>Loyalty NFT Program</h1>
+    
+    <div class="card">
+        <h2>Your NFT Status</h2>
+        <div id="nftStatus">Connect wallet to view status</div>
+    </div>
+    
+    <div class="card">
+        <h2>Earn Points</h2>
+        <button onclick="earnPoints('Purchase', 100)">Make Purchase (+100 points)</button>
+        <button onclick="earnPoints('Social', 50)">Social Share (+50 points)</button>
+        <button onclick="addReferral()">Add Referral</button>
+    </div>
+
+    <div class="status" id="status"></div>
+
+    <script>
+        let contract;
+        let signer;
+        
+        // Add contract ABI
+        const contractABI = [
+            "function safeMint(address to) public",
+            "function addPoints(uint256 tokenId, uint256 points, string memory activity) public",
+            "function addReferral(uint256 tokenId, address referrer) public",
+            "function getLoyaltyData(uint256 tokenId) public view returns (tuple(uint8 level, uint256 points, uint256 lastActivity, uint256 referralCount, uint256 holdingPeriod))",
+            "function balanceOf(address owner) public view returns (uint256)",
+            "function tokenOfOwnerByIndex(address owner, uint256 index) public view returns (uint256)",
+            "function getDiscount(uint256 tokenId) public view returns (uint256)"
+        ];
+
+        async function initialize() {
+            try {
+                if (typeof window.ethereum === 'undefined') {
+                    alert('Please install MetaMask!');
+                    return;
+                }
+
+                await window.ethereum.request({ method: 'eth_requestAccounts' });
+                const provider = new ethers.providers.Web3Provider(window.ethereum);
+                signer = provider.getSigner();
+                const userAddress = await signer.getAddress();
+                
+                // Replace with your deployed contract address
+                const contractAddress = "0x46d4674578a2daBbD0CEAB0500c6c7867999db34";
+                
+                contract = new ethers.Contract(contractAddress, contractABI, signer);
+                
+                // Check if user has NFT
+                const balance = await contract.balanceOf(userAddress);
+                if (balance.toString() === "0") {
+                    document.getElementById('nftStatus').innerHTML = `
+                        <p>You don't have a Loyalty NFT yet</p>
+                        <button onclick="mintNFT()">Mint Loyalty NFT</button>
+                    `;
+                    return;
+                }
+                
+                updateStatus();
+            } catch (error) {
+                console.error('Initialization error:', error);
+                document.getElementById('status').innerHTML = 'Error: ' + error.message;
+            }
+        }
+
+        async function updateStatus() {
+            try {
+                const userAddress = await signer.getAddress();
+                const balance = await contract.balanceOf(userAddress);
+                if (balance.toString() === "0") return;
+
+                const tokenId = await contract.tokenOfOwnerByIndex(userAddress, 0);
+                const loyaltyData = await contract.getLoyaltyData(tokenId);
+                const discount = await contract.getDiscount(tokenId);
+
+                const levels = ['BRONZE', 'SILVER', 'GOLD', 'PLATINUM'];
+                
+                document.getElementById('nftStatus').innerHTML = `
+                    <p>Level: ${levels[loyaltyData.level]}</p>
+                    <p>Points: ${loyaltyData.points.toString()}</p>
+                    <p>Current Discount: ${discount}%</p>
+                    <p>Referrals: ${loyaltyData.referralCount.toString()}</p>
+                    <p>Last Activity: ${new Date(loyaltyData.lastActivity.toString() * 1000).toLocaleString()}</p>
+                `;
+            } catch (error) {
+                console.error('Status update error:', error);
+                document.getElementById('status').innerHTML = 'Error updating status: ' + error.message;
+            }
+        }
+
+        async function mintNFT() {
+            try {
+                const tx = await contract.safeMint(await signer.getAddress());
+                document.getElementById('status').innerHTML = 'Minting NFT...';
+                await tx.wait();
+                document.getElementById('status').innerHTML = 'NFT Minted Successfully!';
+                updateStatus();
+            } catch (error) {
+                console.error('Minting error:', error);
+                document.getElementById('status').innerHTML = 'Minting Error: ' + error.message;
+            }
+        }
+
+        async function earnPoints(activity, points) {
+            try {
+                const userAddress = await signer.getAddress();
+                const tokenId = await contract.tokenOfOwnerByIndex(userAddress, 0);
+                const tx = await contract.addPoints(tokenId, points, activity);
+                document.getElementById('status').innerHTML = 'Adding points...';
+                await tx.wait();
+                document.getElementById('status').innerHTML = 'Points added successfully!';
+                updateStatus();
+            } catch (error) {
+                console.error('Error earning points:', error);
+                document.getElementById('status').innerHTML = 'Error: ' + error.message;
+            }
+        }
+
+        async function addReferral() {
+            try {
+                const referrer = prompt("Enter referrer address:");
+                if (!referrer) return;
+
+                const userAddress = await signer.getAddress();
+                const tokenId = await contract.tokenOfOwnerByIndex(userAddress, 0);
+                const tx = await contract.addReferral(tokenId, referrer);
+                document.getElementById('status').innerHTML = 'Adding referral...';
+                await tx.wait();
+                document.getElementById('status').innerHTML = 'Referral added successfully!';
+                updateStatus();
+            } catch (error) {
+                console.error('Error adding referral:', error);
+                document.getElementById('status').innerHTML = 'Error: ' + error.message;
+            }
+        }
+
+        // Initialize when page loads
+        window.addEventListener('load', initialize);
+    </script>
+</body>
+</html> 
