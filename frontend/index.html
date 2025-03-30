@@ -2,17 +2,78 @@
 <html>
 <head>
     <title>Loyalty NFT Program</title>
-    <script src="https://cdn.ethers.io/lib/ethers-5.7.2.umd.min.js" type="application/javascript"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
     <style>
         body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
         .card { border: 1px solid #ddd; padding: 20px; margin: 10px 0; border-radius: 8px; }
         button { padding: 10px 20px; margin: 5px; cursor: pointer; }
         .status { margin-top: 20px; }
+        .user-info { background: #f5f5f5; padding: 10px; border-radius: 4px; margin-bottom: 20px; }
+        .transaction-info { 
+            background: #e8f4ff;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 10px;
+            display: none;
+        }
+        .input-group {
+            margin: 10px 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        input[type="number"] {
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+        }
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-content {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            max-width: 500px;
+            width: 90%;
+        }
+        .share-buttons {
+            display: flex;
+            gap: 10px;
+            margin: 15px 0;
+        }
+        .share-buttons button {
+            flex: 1;
+            padding: 10px;
+        }
+        #copyButton {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 10px 20px;
+            cursor: pointer;
+        }
+        #copyButton:hover {
+            background: #45a049;
+        }
     </style>
 </head>
 <body>
     <h1>Loyalty NFT Program</h1>
     
+    <div class="user-info" id="userInfo">
+        Connecting to wallet...
+    </div>
+
     <div class="card">
         <h2>Your NFT Status</h2>
         <div id="nftStatus">Connect wallet to view status</div>
@@ -20,16 +81,38 @@
     
     <div class="card">
         <h2>Earn Points</h2>
-        <button onclick="earnPoints('Purchase', 100)">Make Purchase (+100 points)</button>
-        <button onclick="earnPoints('Social', 50)">Social Share (+50 points)</button>
-        <button onclick="addReferral()">Add Referral</button>
+        <div class="input-group">
+            <input type="number" id="purchaseAmount" placeholder="Enter amount in ETH" step="0.0001" min="0.0001">
+            <button onclick="makePurchase()">Make Purchase</button>
+        </div>
+        <div id="transactionInfo" class="transaction-info"></div>
+        <button onclick="showSocialShare()">Share on Social Media (+50 points)</button>
+        <!--<button onclick="addReferral()">Add Referral</button> -->
     </div>
 
     <div class="status" id="status"></div>
 
+    <!-- Add this modal HTML at the end of the body tag -->
+    <div id="socialShareModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h3>Share Your NFT Status</h3>
+            <p>Share your loyalty status to earn 50 points!</p>
+            <div class="share-buttons">
+                <button onclick="shareToTwitter()">Share on Twitter</button>
+                <button onclick="shareToLinkedIn()">Share on LinkedIn</button>
+            </div>
+            <div class="share-text" id="shareText" style="margin: 20px 0; padding: 10px; background: #f5f5f5; border-radius: 4px;">
+                <!-- Share text will be populated by JavaScript -->
+            </div>
+            <button onclick="copyShareText()" id="copyButton">Copy Text</button>
+            <button onclick="closeSocialModal()">Close</button>
+        </div>
+    </div>
+
     <script>
         let contract;
         let signer;
+        const MERCHANT_ADDRESS = "0xE25583099BA105D9ec0A67f5Ae86D90e50036425"; // Replace with merchant address
         
         // Add contract ABI
         const contractABI = [
@@ -54,8 +137,13 @@
                 signer = provider.getSigner();
                 const userAddress = await signer.getAddress();
                 
+                // Update user info
+                document.getElementById('userInfo').innerHTML = `
+                    <strong>Connected Account:</strong> ${userAddress.substring(0, 6)}...${userAddress.substring(38)}
+                `;
+
                 // Replace with your deployed contract address
-                const contractAddress = "YOUR_DEPLOYED_CONTRACT_ADDRESS";
+                const contractAddress = "0xcC1AdEA804E60d6dCbD53f3f92ab08b612310453";
                 
                 contract = new ethers.Contract(contractAddress, contractABI, signer);
                 
@@ -114,6 +202,55 @@
             }
         }
 
+        async function makePurchase() {
+            try {
+                const amount = document.getElementById('purchaseAmount').value;
+                if (!amount || amount <= 0) {
+                    alert('Please enter a valid amount');
+                    return;
+                }
+
+                const startTime = Date.now();
+                document.getElementById('status').innerHTML = 'Processing purchase...';
+                
+                // Send ETH to merchant
+                const tx = await signer.sendTransaction({
+                    to: MERCHANT_ADDRESS,
+                    value: ethers.utils.parseEther(amount)
+                });
+
+                document.getElementById('status').innerHTML = 'Confirming transaction...';
+                const receipt = await tx.wait();
+                
+                // Calculate points (100 points per ETH)
+                const points = Math.floor(amount * 10000);
+                
+                // Add points
+                const userAddress = await signer.getAddress();
+                const tokenId = await contract.tokenOfOwnerByIndex(userAddress, 0);
+                const pointsTx = await contract.addPoints(tokenId, points, 'Purchase');
+                await pointsTx.wait();
+
+                const endTime = Date.now();
+                const duration = (endTime - startTime) / 1000; // Convert to seconds
+
+                // Display transaction info
+                document.getElementById('transactionInfo').style.display = 'block';
+                document.getElementById('transactionInfo').innerHTML = `
+                    <h3>Transaction Complete!</h3>
+                    <p>Amount: ${amount} ETH</p>
+                    <p>Points Earned: ${points}</p>
+                    <p>Transaction Hash: <a href="https://cardona-zkevm.polygonscan.com/tx/${tx.hash}" target="_blank">${tx.hash.substring(0, 6)}...${tx.hash.substring(62)}</a></p>
+                    <p>Time taken: ${duration.toFixed(2)} seconds</p>
+                `;
+
+                updateStatus();
+            } catch (error) {
+                console.error('Purchase error:', error);
+                document.getElementById('status').innerHTML = 'Error: ' + error.message;
+            }
+        }
+
         async function earnPoints(activity, points) {
             try {
                 const userAddress = await signer.getAddress();
@@ -143,6 +280,65 @@
                 updateStatus();
             } catch (error) {
                 console.error('Error adding referral:', error);
+                document.getElementById('status').innerHTML = 'Error: ' + error.message;
+            }
+        }
+
+        async function showSocialShare() {
+            const userAddress = await signer.getAddress();
+            const tokenId = await contract.tokenOfOwnerByIndex(userAddress, 0);
+            const loyaltyData = await contract.getLoyaltyData(tokenId);
+            const levels = ['BRONZE', 'SILVER', 'GOLD', 'PLATINUM'];
+            
+            const shareText = `🎉 Check out my Loyalty NFT status!\n` +
+                `Level: ${levels[loyaltyData.level]}\n` +
+                `Points: ${loyaltyData.points}\n` +
+                `#LoyaltyNFT #Web3 #Blockchain`;
+            
+            document.getElementById('shareText').textContent = shareText;
+            document.getElementById('socialShareModal').style.display = 'flex';
+        }
+
+        function closeSocialModal() {
+            document.getElementById('socialShareModal').style.display = 'none';
+        }
+
+        async function shareToTwitter() {
+            const text = document.getElementById('shareText').textContent;
+            const twitterUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
+            window.open(twitterUrl, '_blank');
+            await handleSuccessfulShare();
+        }
+
+        async function shareToLinkedIn() {
+            const text = document.getElementById('shareText').textContent;
+            const linkedInUrl = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(window.location.href)}&summary=${encodeURIComponent(text)}`;
+            window.open(linkedInUrl, '_blank');
+            await handleSuccessfulShare();
+        }
+
+        async function copyShareText() {
+            const text = document.getElementById('shareText').textContent;
+            await navigator.clipboard.writeText(text);
+            const copyButton = document.getElementById('copyButton');
+            copyButton.textContent = 'Copied!';
+            setTimeout(() => {
+                copyButton.textContent = 'Copy Text';
+            }, 2000);
+        }
+
+        async function handleSuccessfulShare() {
+            try {
+                const userAddress = await signer.getAddress();
+                const tokenId = await contract.tokenOfOwnerByIndex(userAddress, 0);
+                const tx = await contract.addPoints(tokenId, 50, 'Social Share');
+                document.getElementById('status').innerHTML = 'Processing social share points...';
+                await tx.wait();
+                document.getElementById('status').innerHTML = 'Points added for social share!';
+                updateStatus();
+                closeSocialModal();
+            } catch (error) {
+                console.error('Error adding points for social share:', error);
                 document.getElementById('status').innerHTML = 'Error: ' + error.message;
             }
         }
